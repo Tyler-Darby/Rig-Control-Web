@@ -37,6 +37,7 @@ describe('createInitialContext', () => {
       iqAudioDevice: '',
       iqSampleRate: 48000,
       iqSwapChannels: false,
+      iqAutoBalance: false,
     });
     expect(ctx.spectrumSupported).toBe(false);
     expect(ctx.spectrumSocket).toBeNull();

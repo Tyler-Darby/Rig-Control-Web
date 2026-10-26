@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState, useCallback } from "react";
 import { Activity, RefreshCw, Settings, X } from "lucide-react";
 import type { Socket } from "socket.io-client";
 import PanelChrome from "../components/PanelChrome";
-import type { SpectrumData, SpectrumSettings } from "../types";
+import type { IqBalanceStatus, SpectrumData, SpectrumSettings } from "../types";
 import { COLORMAPS, COLORMAP_NAMES } from "../utils/spectrumColors";
 import { scrollCanvasDown } from "../utils";
 import { lsGet, lsSet, drawDbGridLines, themeInkRgba, drawFilledSpectrumLine, paintWaterfallRow } from "../utils/spectrumCanvas";
@@ -131,6 +131,7 @@ function SpectrumHamlibPanel({
   const [cursorLineX, setCursorLineX] = useState<number | null>(null);
   const [yaesuStatus, setYaesuStatus] = useState<{ running: boolean; error: string | null }>({ running: false, error: null });
   const [iqStatus, setIqStatus] = useState<{ running: boolean; error: string | null }>({ running: false, error: null });
+  const [iqBalance, setIqBalance] = useState<IqBalanceStatus | null>(null);
   const [iqInputDevices, setIqInputDevices] = useState<{ name: string; altName: string; hostAPIName: string; defaultSampleRate: number }[]>([]);
   const [optimisticSpanIndex, setOptimisticSpanIndex] = useState<number | null>(null);
   const optimisticTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -147,6 +148,13 @@ function SpectrumHamlibPanel({
     const handler = (s: { running: boolean; error: string | null }) => setIqStatus(s);
     socket.on("iq-scope-status", handler);
     return () => { socket.off("iq-scope-status", handler); };
+  }, [socket]);
+
+  useEffect(() => {
+    if (!socket) return;
+    const handler = (s: IqBalanceStatus | null) => setIqBalance(s);
+    socket.on("iq-balance-status", handler);
+    return () => { socket.off("iq-balance-status", handler); };
   }, [socket]);
 
   useEffect(() => {
@@ -611,6 +619,43 @@ function SpectrumHamlibPanel({
                   <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${spectrumSettings.iqSwapChannels ? "left-5.5" : "left-0.5"}`} />
                 </button>
               </div>
+
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-semibold text-[#e0e0e0]">Auto I/Q Balance</div>
+                  <div className="text-[0.625rem] text-[#8e9299] mt-0.5">Corrects gain/phase mismatch that leaves a faint mirror image</div>
+                </div>
+                <button
+                  onClick={() => {
+                    const next = { ...spectrumSettings, iqAutoBalance: !spectrumSettings.iqAutoBalance };
+                    setSpectrumSettings(next);
+                    socket?.emit("save-settings", { spectrumSettings: next });
+                  }}
+                  className={`w-10 h-5 rounded-full transition-colors relative ${spectrumSettings.iqAutoBalance ? "bg-emerald-500" : "bg-[#2a2b2e]"}`}
+                >
+                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${spectrumSettings.iqAutoBalance ? "left-5.5" : "left-0.5"}`} />
+                </button>
+              </div>
+
+              {/* I/Q balance readout: measured even with Auto I/Q Balance off, so input gains can be matched by hand */}
+              {spectrumSettings.enabled && iqBalance && (
+                <div className="rounded-lg bg-[#1a1b1e] border border-[#2a2b2e] p-3 space-y-1" data-testid="iq-balance-readout">
+                  <div className="text-[0.625rem] uppercase text-[#8e9299] font-bold">Measured I/Q Balance</div>
+                  {iqBalance.warning ? (
+                    <div className="text-[0.625rem] text-amber-400 leading-relaxed">{iqBalance.warning}</div>
+                  ) : (
+                    <>
+                      <div className="text-xs font-mono text-[#e0e0e0]">
+                        Gain {iqBalance.gainDb >= 0 ? "+" : ""}{iqBalance.gainDb.toFixed(2)} dB · Phase {iqBalance.phaseDeg >= 0 ? "+" : ""}{iqBalance.phaseDeg.toFixed(1)}°
+                      </div>
+                      <div className="text-[0.625rem] text-[#8e9299]">
+                        Image rejection without correction: ~{iqBalance.imageRejectionDb.toFixed(0)} dB
+                        {iqBalance.applied ? " · correction active" : ""}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

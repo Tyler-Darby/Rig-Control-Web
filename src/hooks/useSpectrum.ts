@@ -15,6 +15,7 @@ export function useSpectrum(socket: Socket | null) {
     iqAudioDevice: "",
     iqSampleRate: 48000,
     iqSwapChannels: false,
+    iqAutoBalance: false,
   });
 
   const latestSpectrumRef = useRef<SpectrumData | null>(null);

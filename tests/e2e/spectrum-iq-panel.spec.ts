@@ -208,6 +208,16 @@ test.describe('SpectrumHamlibPanel Audio I/Q source via a PipeWire loopback', ()
       await expect(async () => {
         expect(await canvasFingerprint(spectrumCanvas)).not.toBe(baseline);
       }).toPass({ timeout: 15_000 });
+
+      // The tone player writes an exactly balanced pair (I=cos, Q=sin, same
+      // amplitude), so the live I/Q balance readout (~1/s iq-balance-status)
+      // should report a near-zero gain mismatch rather than a wiring
+      // warning — exercises the server-side estimator -> socket -> settings
+      // modal path end to end. A loose sub-1 dB match, not an exact value:
+      // server/iqScope.test.ts covers the estimator math precisely.
+      await page.getByTitle('Spectrum scope settings').click();
+      await expect(page.getByTestId('iq-balance-readout')).toContainText(/Gain [+-]0\.\d\d dB/, { timeout: 15_000 });
+      await page.locator('button:has(svg.lucide-x)').click();
     } finally {
       // Disable the spectrum scope before disconnecting/tearing down —
       // otherwise ctx.iqCaptureProcess (server/iqScope.ts) stays open on

@@ -182,6 +182,16 @@ export interface RfLevelCapabilities {
   range: CapabilityRange;
 }
 
+/** Live auto I/Q balance measurement (`iq-balance-status`, ~1/s; null when capture is stopped). */
+export interface IqBalanceStatus {
+  gainDb: number;
+  phaseDeg: number;
+  imageRejectionDb: number;
+  valid: boolean;
+  warning: string | null;
+  applied: boolean;
+}
+
 export interface SpectrumData {
   id: number;
   name: string;
@@ -206,6 +216,7 @@ export interface SpectrumSettings {
   iqAudioDevice: string;
   iqSampleRate: number;
   iqSwapChannels: boolean;
+  iqAutoBalance: boolean;
 }
 
 export interface DebugFlags {

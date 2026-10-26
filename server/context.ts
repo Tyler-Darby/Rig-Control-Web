@@ -324,6 +324,7 @@ export interface ServerContext {
     iqAudioDevice: string;
     iqSampleRate: number;
     iqSwapChannels: boolean;
+    iqAutoBalance: boolean;
   };
   spectrumSocket: dgram.Socket | null;
   spectrumSupported: boolean;
@@ -571,6 +572,7 @@ export function createInitialContext(io: Server, baseDir: string, dataDir: strin
       iqAudioDevice: "",
       iqSampleRate: 48000,
       iqSwapChannels: false,
+      iqAutoBalance: false,
     },
     spectrumSocket: null,
     spectrumSupported: false,

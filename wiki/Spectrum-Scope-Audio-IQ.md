@@ -40,6 +40,20 @@ The waterfall should appear within a second or two.
 
 If a signal you expect to see on one side of center consistently appears on the other side (or a known upper-sideband signal shows its image more strongly than the real signal), the left/right channels are swapped relative to what RigControl Web expects as I vs Q. Toggle **Swap I/Q** in the panel settings — this is the same fix HDSDR uses for the G90's own "Swap IQ" option, and has the identical effect here.
 
+### Reducing the faint mirror image (Auto I/Q Balance)
+
+Even with Swap I/Q set correctly, strong signals usually leave a faint "ghost" on the opposite side of center. That's **I/Q imbalance**: the I and Q paths through the radio and the sound card are never perfectly identical, so their levels differ slightly (gain mismatch) and they aren't exactly 90° apart (phase error). As a rough guide, a 1 dB level mismatch alone leaves the image only ~25 dB below the real signal; 0.2 dB leaves it ~39 dB below.
+
+The panel settings show a **Measured I/Q Balance** readout (about once a second, whenever the capture is running) with the current gain mismatch, phase error, and the image rejection those imply. It measures whether or not correction is turned on, so you can also use it to match your sound card's two input gain knobs by hand: turn one knob slowly until Gain reads close to `+0.00 dB`.
+
+Turn on **Auto I/Q Balance** to have RigControl Web correct the remaining mismatch in software. It continuously estimates the gain and phase error from the received signal itself (no calibration tone needed) and corrects Q against I before the FFT; the estimate settles within a couple of seconds and tracks slow drift. It's off by default.
+
+What it can and can't do:
+
+- It corrects **one** gain/phase error for the whole span — the average across it. Mismatch that varies with frequency (typically worst right next to center and near the span edges, from filter-component tolerances in each path) is reduced but not fully removed.
+- It **won't correct a wiring problem**. If one channel is silent, both inputs carry the same signal, or the levels differ by more than 6 dB, correction is skipped and the readout shows a warning instead. A common cause of the first two is plugging the radio's stereo I/Q cable into a single **balanced (TRS) mono input** on an audio interface, such as one of a Focusrite Scarlett's front jacks — that input subtracts the two channels into one. Use a 3.5 mm stereo to dual 1/4″ mono (TS) cable into two separate inputs instead.
+- Swap I/Q still decides which side of center a signal appears on; Auto I/Q Balance only removes the mirror.
+
 ### Tuning the noise floor / ceiling
 
 The **Noise Floor** and **Ceiling** sliders control display contrast, the same as the other two spectrum sources. There is no calibrated absolute reference for this path (the G90's I/Q output level isn't documented to a precise spec, and any adapter's input gain further changes the effective level), so the defaults are starting points — adjust them against your own setup until the waterfall shows good contrast between the noise floor and real signals.
@@ -56,6 +70,8 @@ The **Noise Floor** and **Ceiling** sliders control display contrast, the same a
 | "Failed to open I/Q capture device" | The device doesn't support the selected sample rate, or is in use by another application | Try a lower sample rate, or close other apps using the device |
 | Waterfall is flat/empty | Cable on Mic-In instead of Line-In, radio's I/Q output not actually active, or wrong device selected | Recheck wiring; confirm the correct capture device is selected |
 | Signal appears mirrored / on the wrong side of center | Left/right channels don't match RigControl Web's I/Q convention | Toggle **Swap I/Q** |
+| Every signal appears equally strong on **both** sides of center | One I/Q channel isn't reaching the computer (or both inputs carry the same signal) — the capture is effectively real-valued, not complex | Check the Measured I/Q Balance readout for a wiring warning; make sure I and Q go to two separate inputs (see [Reducing the faint mirror image](#reducing-the-faint-mirror-image-auto-iq-balance)) |
+| A faint copy of strong signals on the opposite side of center | Normal I/Q gain/phase imbalance | Match input gains using the readout, and/or turn on **Auto I/Q Balance** |
 
 ### Check the debug log
 
