@@ -1,10 +1,11 @@
 import { amplitudeToPixel } from "./spectrumColors";
+import { setPref } from "./userPrefsSync";
 
 export function lsGet(key: string, fallback: string): string {
   try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
 }
 export function lsSet(key: string, value: string): void {
-  try { localStorage.setItem(key, value); } catch { /* ignore */ }
+  setPref(key, value);
 }
 
 // Neutral overlay color (grid, markers) that stays visible on both themes. Reads the

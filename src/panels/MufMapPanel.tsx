@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { RefreshCw } from "lucide-react";
 import { cn } from "../utils";
 import { mufMapStorageKey } from "../types/layout";
+import { setPref } from "../utils/userPrefsSync";
 
 type Metric = "mufd" | "fof2";
 type TimeSlot = "now" | "1h" | "12h" | "24h";
@@ -64,11 +65,7 @@ function loadSavedView(callsign: string): SavedView | null {
 }
 
 function saveView(callsign: string, view: SavedView): void {
-  try {
-    localStorage.setItem(mufMapStorageKey(callsign), JSON.stringify(view));
-  } catch {
-    // ignore
-  }
+  setPref(mufMapStorageKey(callsign), JSON.stringify(view));
 }
 
 interface Props { heightPx?: number; callsign?: string }

@@ -1,5 +1,17 @@
+import fs from 'fs';
+import path from 'path';
 import { test as base, type Browser } from '@playwright/test';
+import { RCW_TEST_DATA_DIR } from '../../playwright.config.ts';
 import { routeSpots } from './spot-fixtures.ts';
+
+// The server persists each user's callsign-namespaced UI prefs (layout, collapse state, ...) to
+// user-prefs.json (server/userPrefs.ts), and every spec shares one server and one ADMIN user. The
+// `resetUserPrefs` auto fixture below deletes that file before each test, putting ADMIN back to "no
+// server record" so the app uploads the browser's own localStorage prefs on the first page load.
+// Without it, prefs changed in one spec would leak into later ones, and the server copy would
+// override the grid-layout-v1 most specs seed via page.addInitScript. server/userPrefs.ts re-reads
+// the file on every access, so deleting it under the running server is safe.
+export const USER_PREFS_PATH = path.join(RCW_TEST_DATA_DIR, 'user-prefs.json');
 
 // Shared `test` for every e2e spec. It makes the POTA/SOTA/WWFF spot feeds hermetic:
 // the default layout contains the combo spots panel, so every page load fetches all three
@@ -13,7 +25,15 @@ import { routeSpots } from './spot-fixtures.ts';
 //
 // Live polling is opt-in, for the pre-release check only: tests/e2e/spots-live.spec.ts sets
 // `liveSpots: true` and is skipped unless RCW_E2E_LIVE_SPOTS=1 (npm run test:e2e:live-spots).
-export const test = base.extend<object, { liveSpots: boolean }>({
+export const test = base.extend<{ resetUserPrefs: void }, { liveSpots: boolean }>({
+  resetUserPrefs: [
+    async ({}, use) => {
+      fs.rmSync(USER_PREFS_PATH, { force: true });
+      await use();
+    },
+    { auto: true },
+  ],
+
   liveSpots: [false, { option: true, scope: 'worker' }],
 
   browser: [

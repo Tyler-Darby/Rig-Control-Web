@@ -8,6 +8,7 @@ import type { Socket } from "socket.io";
 import { getAppVersion } from "./context.ts";
 import type { ServerContext } from "./context.ts";
 import { parsePort } from "./serverConfig.ts";
+import { getUserPrefs, resetUserPrefs, deleteUserPrefs, deleteAllUserPrefs } from "./userPrefs.ts";
 import type {
   AuthenticatedSocket,
   UserRecord,
@@ -389,6 +390,7 @@ export function registerAuthHandlers(
         role: user.role,
         mustChangePassword: user.mustChangePassword ?? false,
         preferencesClearedAt: user.preferencesClearedAt ?? null,
+        prefs: getUserPrefs(ctx, user.callsign),
       });
 
       if (!user.mustChangePassword) {
@@ -588,6 +590,7 @@ export function registerAdminHandlers(
         return;
       }
       saveUsers(ctx, filtered);
+      deleteUserPrefs(ctx, normalizedCallsign);
       appendAudit(ctx, {
         ts: new Date().toISOString(),
         event: "user_deleted",
@@ -671,6 +674,7 @@ export function registerAdminHandlers(
         }
         users[idx].preferencesClearedAt = new Date().toISOString();
         saveUsers(ctx, users);
+        resetUserPrefs(ctx, normalizedCallsign);
         appendAudit(ctx, {
           ts: new Date().toISOString(),
           event: "preferences_cleared",
@@ -893,6 +897,7 @@ export function registerAdminHandlers(
       // tokens are immediately invalidated — not just the live sockets kicked above.
       try { fs.unlinkSync(usersFilePath(ctx)); } catch { /* may not exist */ }
       try { fs.unlinkSync(authFilePath(ctx)); } catch { /* may not exist */ }
+      deleteAllUserPrefs(ctx);
       ctx.jwtSecret = "";
 
       initAuth(ctx).then(() => {

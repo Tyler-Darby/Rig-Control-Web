@@ -1,4 +1,5 @@
 import { useState, useEffect, useLayoutEffect } from "react";
+import { setPref } from "../utils/userPrefsSync";
 
 export function readCollapsed(
   ns: (key: string) => string,
@@ -35,7 +36,7 @@ export function usePersistedCollapsed(
 
   useEffect(() => {
     if (!callsign) return;
-    localStorage.setItem(ns(key), value.toString());
+    setPref(ns(key), value.toString());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, callsign]);
 

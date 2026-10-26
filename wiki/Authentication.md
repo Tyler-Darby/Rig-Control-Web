@@ -69,7 +69,7 @@ Lists all registered user accounts with their callsign, role, and whether a forc
 | **Add User** | Create a new account. Specify callsign, initial password, and role. The callsign is normalized to upper-case. |
 | **Reset Password** | Set a new temporary password for any user. The user will be required to change it on next login. |
 | **Change Role** | Toggle a user between `admin` and `regular`. |
-| **Clear Preferences** | Wipe the user's `localStorage` layout and panel state on their next login (or immediately if they are currently connected). Useful when a layout becomes corrupted or you want to restore defaults for a user. |
+| **Clear Preferences** | Reset the user's saved layout and panel state to defaults, on the server and on every device they use: immediately for connected sessions, otherwise on their next login. Useful when a layout becomes corrupted or you want to restore defaults for a user. |
 | **Delete User** | Permanently remove the account. All active sessions for that user are immediately kicked. You cannot delete your own account. |
 
 ### Active Sessions
@@ -115,7 +115,7 @@ Shows the application version, server uptime, Node.js version, and TLS certifica
 
 ### Change Server Port
 
-The Danger Zone's **Change Server Port** moves the HTTPS server off the default 3000 (range 1024-65535). The server re-binds immediately, saves the choice to `server-config.json` in its data directory, and drops existing connections. The Electron app follows to the new port automatically. Browsers treat the new port as a new site: reload at the new address, accept the certificate warning again, and sign in again (saved layouts are stored per address). The TLS certificate needs no change since it covers IPs, not ports. You must open the new port in your firewall (the Windows installer only adds a rule for 3000) and, for Docker with `-p` mappings, update the mapping. If the `RCW_PORT` environment variable is set it takes precedence and the control is locked.
+The Danger Zone's **Change Server Port** moves the HTTPS server off the default 3000 (range 1024-65535). The server re-binds immediately, saves the choice to `server-config.json` in its data directory, and drops existing connections. The Electron app follows to the new port automatically. Browsers treat the new port as a new site: reload at the new address, accept the certificate warning again, and sign in again. Your saved layout follows your account (see [Per-User Preferences](#per-user-preferences)), but device-local settings such as audio devices and the theme are stored per address and start from defaults. The TLS certificate needs no change since it covers IPs, not ports. You must open the new port in your firewall (the Windows installer only adds a rule for 3000) and, for Docker with `-p` mappings, update the mapping. If the `RCW_PORT` environment variable is set it takes precedence and the control is locked.
 
 ### Factory Reset
 
@@ -127,7 +127,7 @@ Deletes the user database (`users.json`) and rotates the JWT secret (`auth.json`
 
 ## Resetting Accounts on Reinstall
 
-User accounts (`users.json`), the JWT secret (`auth.json`), the audit log (`audit.json`), and your settings (`settings.json`) are stored in the application's data directory, **outside** the program folder:
+User accounts (`users.json`), the JWT secret (`auth.json`), the audit log (`audit.json`), each user's saved layout and panel preferences (`user-prefs.json`), and your settings (`settings.json`) are stored in the application's data directory, **outside** the program folder:
 
 | Platform | Data directory |
 |----------|----------------|
@@ -165,6 +165,10 @@ Timing-safe password comparison is used for all failed-user lookups to prevent u
 
 ## Per-User Preferences
 
-Each user's layout configuration and panel collapse state is stored in `localStorage` under a key namespace prefixed with their upper-case callsign (e.g. `W1AW:grid-layout-v1`). This means multiple users sharing the same browser will each have their own independent layout.
+Each user's panel layout (compact and phone), panel collapse state, spectrum scope display settings (colormap, floor/ceiling, auto-level), MUF Map view and All Spots tab are saved **per callsign on the server**, so you get the same layout on every device and browser you sign in from, and whichever address you use to reach the server (IP, hostname, or a new port). Device-specific settings (audio input/output devices, the light/dark theme, the WSJTX bridge toggle) stay local to each browser.
 
-When an admin clears a user's preferences, the server sends an `auth:preferences-cleared` event to any currently connected sessions for that user, which triggers an immediate `localStorage` wipe and page reload. If the user is not currently connected, the cleared timestamp is stored in `users.json` and the wipe is applied on their next login.
+- **How it syncs:** the server's copy is loaded when you sign in (or when the page reconnects after a reload, network drop or server restart), and every change you make is saved back to the server within about half a second. Other devices that are already open keep what they have until they reload or sign in again; they are not rearranged under you.
+- **First sign-in after upgrading:** if the server has nothing saved for your callsign yet, the first browser you sign in from uploads its existing layout. From then on the server's copy is used everywhere, so a different layout saved only in another browser is replaced by it.
+- **Storage:** the preferences live in `user-prefs.json` in the server's data directory (see [Resetting Accounts on Reinstall](#resetting-accounts-on-reinstall)). The browser also keeps a copy in `localStorage` under keys prefixed with your upper-case callsign (e.g. `W1AW:grid-layout-v1`), so multiple users sharing one browser each keep their own layout.
+
+When an admin clears a user's preferences, the server resets that user's saved preferences to empty and sends an `auth:preferences-cleared` event to any currently connected sessions for that user, which wipes the local copy and reloads the page. Devices that aren't connected pick up the reset on their next sign-in. Deleting a user removes their saved preferences, and a Factory Reset removes everyone's.

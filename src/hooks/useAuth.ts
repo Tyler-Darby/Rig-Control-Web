@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { Socket } from "socket.io-client";
 import { MUFMAP_STORAGE_KEY } from "../types/layout";
+import { startPrefsSync, stopPrefsSync } from "../utils/userPrefsSync";
 
 export type AuthState =
   | "unknown"
@@ -46,6 +47,7 @@ export function useAuth(socket: Socket | null): UseAuthReturn {
     const onAuthRequired = (data?: { reason?: string }) => {
       const notice = sessionNoticeFor(data?.reason);
       if (notice) setAuthNotice(notice);
+      stopPrefsSync({ discard: true });
       setAuthState("unauthenticated");
       setCurrentUser(null);
     };
@@ -55,15 +57,20 @@ export function useAuth(socket: Socket | null): UseAuthReturn {
       callsign,
       role,
       mustChangePassword,
+      prefs,
     }: {
       token: string;
       callsign?: string;
       role?: "admin" | "regular";
       mustChangePassword?: boolean;
+      prefs?: Record<string, string> | null;
     }) => {
       localStorage.setItem("auth-token", token);
       setAuthNotice(null);
       if (callsign && role) {
+        // Hydrate localStorage from the server before currentUser is set, so
+        // callsign-keyed hooks re-read the synced values on this same render.
+        startPrefsSync(socket, callsign, prefs);
         setCurrentUser({ callsign, role });
       }
       if (mustChangePassword) {
@@ -81,6 +88,7 @@ export function useAuth(socket: Socket | null): UseAuthReturn {
       role?: "admin" | "regular";
       mustChangePassword?: boolean;
       preferencesClearedAt?: string | null;
+      prefs?: Record<string, string> | null;
       error?: string;
       retryAfter?: number;
     }) => {
@@ -89,6 +97,7 @@ export function useAuth(socket: Socket | null): UseAuthReturn {
         if (data.preferencesClearedAt) {
           checkAndClearPreferences(data.callsign, data.preferencesClearedAt);
         }
+        startPrefsSync(socket, data.callsign, data.prefs);
         setCurrentUser({ callsign: data.callsign, role: data.role });
         setLoginError("");
         setAuthNotice(null);
@@ -109,6 +118,7 @@ export function useAuth(socket: Socket | null): UseAuthReturn {
     const onKicked = ({ reason }: { reason: string }) => {
       console.log(`[AUTH] Kicked: ${reason}`);
       setAuthNotice(sessionNoticeFor(reason));
+      stopPrefsSync({ discard: true });
       localStorage.removeItem("auth-token");
       setAuthState("unauthenticated");
       setCurrentUser(null);
@@ -117,6 +127,7 @@ export function useAuth(socket: Socket | null): UseAuthReturn {
 
     const onPreferencesCleared = () => {
       if (currentUser) {
+        stopPrefsSync({ discard: true });
         clearUserPreferences(currentUser.callsign);
         window.location.reload();
       }
@@ -163,6 +174,7 @@ export function useAuth(socket: Socket | null): UseAuthReturn {
 
   const logout = useCallback(() => {
     if (!socket) return;
+    stopPrefsSync();
     socket.emit("auth:logout");
     localStorage.removeItem("auth-token");
     setAuthState("unauthenticated");
@@ -212,6 +224,8 @@ export const NAMESPACED_KEYS = [
   "phone-mufmap-collapsed",
   "compact-cwdecode-collapsed",
   "phone-cwdecode-collapsed",
+  "compact-ft8decode-collapsed",
+  "phone-ft8decode-collapsed",
   "compact-spectrum-hamlib-collapsed",
   "phone-spectrum-hamlib-collapsed",
   "compact-spectrum-audio-collapsed",
@@ -227,6 +241,10 @@ export const NAMESPACED_KEYS = [
   "phone-sota-spots-collapsed",
   "compact-wwff-spots-collapsed",
   "phone-wwff-spots-collapsed",
+  "compact-dx-spots-collapsed",
+  "phone-dx-spots-collapsed",
+  "compact-header-collapsed",
+  "phone-header-collapsed",
 
   // Panel collapse state, pre-compact/phone-split legacy key names — only
   // ever read as a fallback (never written by current code), kept here so a
@@ -239,6 +257,7 @@ export const NAMESPACED_KEYS = [
   "solar-collapsed",
   "mufmap-collapsed",
   "cwdecode-collapsed",
+  "ft8decode-collapsed",
   "spectrum-hamlib-collapsed",
   "spectrum-audio-collapsed",
   "is-compact-smeter-collapsed",
@@ -268,6 +287,7 @@ export const NAMESPACED_KEYS = [
   "spectrum-audio-autoFloor",
   "spectrum-audio-autoCeiling",
   "spectrum-audio-bwOverride",
+  "spectrum-audio-waterfallMode",
 ];
 
 const PREFS_CLEARED_KEY = "prefs-cleared-at";

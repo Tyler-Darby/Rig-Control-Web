@@ -1,6 +1,7 @@
 import { useState, useCallback, useLayoutEffect } from 'react';
 import type { LayoutConfig, ViewLayout, GridItem, PanelType, PanelAddConfig } from '../types/layout';
 import { PANEL_MIN_SIZES, mufMapStorageKey } from '../types/layout';
+import { setPref, removePref } from '../utils/userPrefsSync';
 
 
 const BASE_STORAGE_KEY = 'grid-layout-v1';
@@ -51,7 +52,7 @@ function loadFromStorage(storageKey: string): LayoutConfig | null {
     const hasLegacyPanel = (items: { panelType?: string }[]) =>
       items.some(item => item.panelType === 'videoaudio');
     if (hasLegacyPanel(config.compact.items) || hasLegacyPanel(config.phone.items)) {
-      localStorage.removeItem(storageKey);
+      removePref(storageKey);
       return null;
     }
     return config;
@@ -61,20 +62,12 @@ function loadFromStorage(storageKey: string): LayoutConfig | null {
 }
 
 function saveToStorage(storageKey: string, config: LayoutConfig): void {
-  try {
-    localStorage.setItem(storageKey, JSON.stringify(config));
-  } catch {
-    // ignore
-  }
+  setPref(storageKey, JSON.stringify(config));
 }
 
 // Reset MufMapPanel's saved pan/zoom + tab selection so re-adding the panel starts fresh.
 function clearMufMapState(callsign: string): void {
-  try {
-    localStorage.removeItem(mufMapStorageKey(callsign));
-  } catch {
-    // ignore
-  }
+  removePref(mufMapStorageKey(callsign));
 }
 
 export function useLayoutConfig(callsign = "") {

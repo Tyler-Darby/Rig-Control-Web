@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { cn } from "../utils";
 import { SpotSettingsGear } from "./SpotsPanel";
+import { setPref } from "../utils/userPrefsSync";
 
 type Tab = 'pota' | 'sota' | 'wwff' | 'dx';
 
@@ -39,7 +40,7 @@ export default function SpotComboPanel({
 
   const handleTab = (tab: Tab) => {
     setActiveTab(tab);
-    localStorage.setItem(tabKey, tab);
+    setPref(tabKey, tab);
   };
 
   return (

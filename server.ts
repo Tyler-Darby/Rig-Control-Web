@@ -30,6 +30,7 @@ import {
   registerAuthHandlers,
   registerAdminHandlers,
 } from "./server/auth.ts";
+import { getUserPrefs, registerUserPrefsHandlers } from "./server/userPrefs.ts";
 
 let electronWin: any = null;
 export function setElectronWindow(win: any) {
@@ -397,6 +398,7 @@ export async function startServer(appPath?: string, userDataPath?: string) {
 
     // Auth handlers are always registered (login works pre-auth)
     registerAuthHandlers(socket, ctx, registerFunctionalOnce);
+    registerUserPrefsHandlers(socket, ctx);
 
     // Attempt token verification on connect — resolveToken validates the signature
     // AND confirms the user still exists in users.json with their current role.
@@ -419,6 +421,7 @@ export async function startServer(appPath?: string, userDataPath?: string) {
         callsign: resolved.callsign,
         role: resolved.role,
         mustChangePassword: resolved.mustChangePassword,
+        prefs: getUserPrefs(ctx, resolved.callsign),
       });
       if (!resolved.mustChangePassword) {
         registerFunctionalOnce();

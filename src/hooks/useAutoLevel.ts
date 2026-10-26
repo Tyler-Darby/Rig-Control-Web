@@ -5,6 +5,7 @@ import {
   type AutoLevelOptions,
   type AutoLevelState,
 } from "../utils/autoLevel";
+import { setPref } from "../utils/userPrefsSync";
 
 const DISPLAY_SYNC_INTERVAL_MS = 250;
 
@@ -24,11 +25,7 @@ function lsGetBool(key: string, fallback: boolean): boolean {
   }
 }
 function lsSet(key: string, value: string): void {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    /* ignore */
-  }
+  setPref(key, value);
 }
 
 interface UseAutoLevelParams {
