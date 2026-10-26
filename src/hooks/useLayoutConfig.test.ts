@@ -151,3 +151,42 @@ describe('useLayoutConfig storage key tracks callsign after it resolves post-mou
     expect(result.current.compactLayout.items.length).toBe(savedItems.length);
   });
 });
+
+// Regression: setGridSize used to also drop every item with y >= rows. The compact
+// rows control is hidden and fixed at the default 6, while addPanel stacks new
+// panels below everything else in their column — so a panel added to a column
+// landed at y >= 6 and was silently deleted by the next cols change.
+describe('useLayoutConfig setGridSize', () => {
+  it('keeps panels below the nominal row count when the column count changes', () => {
+    const { result } = renderHook(() => useLayoutConfig('W1AW'));
+
+    act(() => {
+      result.current.addPanel('compact', 'cwdecode', { targetX: 1 });
+    });
+    const added = result.current.compactLayout.items.find(i => i.panelType === 'cwdecode')!;
+    expect(added.y).toBeGreaterThanOrEqual(result.current.compactLayout.rows);
+
+    act(() => {
+      result.current.setGridSize('compact', 4, result.current.compactLayout.rows);
+    });
+
+    const kept = result.current.compactLayout.items.find(i => i.panelType === 'cwdecode');
+    expect(kept).toBeDefined();
+    expect(kept!.h).toBe(added.h);
+    const stored = JSON.parse(localStorage.getItem('W1AW:grid-layout-v1')!);
+    expect(stored.compact.items.some((i: GridItem) => i.panelType === 'cwdecode')).toBe(true);
+  });
+
+  it('still drops panels in columns removed by shrinking the column count', () => {
+    const { result } = renderHook(() => useLayoutConfig('W1AW'));
+
+    act(() => {
+      result.current.setGridSize('compact', 2, result.current.compactLayout.rows);
+    });
+
+    const items = result.current.compactLayout.items;
+    expect(items.some(i => i.x >= 2)).toBe(false);
+    // Full-width vfo (x 0) survives.
+    expect(items.some(i => i.panelType === 'vfo')).toBe(true);
+  });
+});

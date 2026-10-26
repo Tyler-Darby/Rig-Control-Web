@@ -157,14 +157,18 @@ export function useLayoutConfig(callsign = "") {
     setConfig(prev => {
       const viewLayout = prev[view];
       const oldCols = viewLayout.cols;
+      // Only columns removed by a shrink drop their panels. `rows` is not a
+      // bound here: the compact renderer stacks panels by content height and
+      // hides the rows control, while addPanel/moveCompactPanelColumn place
+      // new panels below everything else (y >= rows is normal), so clipping
+      // to rows silently deleted panels on any cols change.
       const clampedItems = viewLayout.items
-        .filter(item => item.x < cols && item.y < rows)
+        .filter(item => item.x < cols)
         .map(item => ({
           ...item,
           // Full-width items keep their (large) w so they stay full-width
           // regardless of how many columns the grid is resized to.
           w: item.w >= oldCols ? item.w : Math.min(item.w, cols - item.x),
-          h: Math.min(item.h, rows - item.y),
         }));
       const next = { ...prev, [view]: { ...viewLayout, cols, rows, items: clampedItems } };
       saveToStorage(storageKey, next);
