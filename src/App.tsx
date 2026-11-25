@@ -391,6 +391,8 @@ export default function App() {
     handleConnect,
     handleSetFreq,
     adjustVfoFrequency,
+    handleKnobTune,
+    knobPending,
     handleSetMode,
     handleSetBw,
     handleSetPTT,
@@ -1286,6 +1288,8 @@ export default function App() {
             setInputVfoA={setInputVfoA}
             setInputVfoB={setInputVfoB}
             adjustVfoFrequency={adjustVfoFrequency}
+            handleKnobTune={handleKnobTune}
+            knobPending={knobPending}
             handleSetVFO={handleSetVFO}
             handleToggleSplit={handleToggleSplit}
             handleSetFreq={handleSetFreq}

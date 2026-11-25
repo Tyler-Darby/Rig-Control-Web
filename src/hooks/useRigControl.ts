@@ -2,9 +2,14 @@ import { useState, useEffect, useRef, useCallback, type FormEvent } from "react"
 import { Socket } from "socket.io-client";
 import { VOICE_MODES, MODES_FALLBACK, DEFAULT_STATUS } from "../constants";
 import type { RigStatus, SwrProtectionSettings, SwrTrip } from "../types";
+import { KnobFrequencySender } from "../utils/tuningKnob";
 
 let rigVerbose = false;
 const vlog = (...args: any[]) => { if (rigVerbose) console.log(...args); };
+
+// How long the knob waits for a set-frequency ack before moving on to the next value; the server
+// coalesces requests itself, so giving up early can't stack commands up at the radio.
+const KNOB_ACK_TIMEOUT_MS = 5000;
 
 /** Mirrors server/rigComm.ts's tested formatExtendedCommand(): rigctld's
  *  extended-response protocol prefixes single-letter short-form commands
@@ -83,6 +88,8 @@ export function useRigControl({
   const [pendingVfoOp, setPendingVfoOp] = useState<string | null>(null);
   const [isTuning, setIsTuning] = useState(false);
   const [tuneJustFinished, setTuneJustFinished] = useState(false);
+  // True while the tuning knob's displayed frequency hasn't been confirmed by the radio yet.
+  const [knobPending, setKnobPending] = useState(false);
 
   // ── Refs ──────────────────────────────────────────────────────────────────
   const isDraggingRF = useRef(false);
@@ -96,6 +103,7 @@ export function useRigControl({
   const tuneSeenPTTRef = useRef(false);
   const tuneJustFinishedRef = useRef(false);
   const skipPollsCount = useRef(0);
+  const knobSenderRef = useRef<KnobFrequencySender | null>(null);
   const pttRef = useRef(false);
   const connectedRef = useRef(false);
   const uiConnectedRef = useRef(false);
@@ -223,19 +231,79 @@ export function useRigControl({
     }
   }, [socket]);
 
+  // Any other way of setting the frequency or VFO ends a knob session, so its pending
+  // send/settle can't overwrite the new value.
+  const cancelKnobTuning = useCallback(() => {
+    knobSenderRef.current?.cancel();
+    setKnobPending(false);
+  }, []);
+
   const handleSetVFO = useCallback((vfo: string) => {
+    cancelKnobTuning();
     skipPollsCount.current = 1;
     setStatus(prev => ({ ...(prev || DEFAULT_STATUS), vfo }));
     socket?.emit("set-vfo", vfo);
-  }, [socket]);
+  }, [socket, cancelKnobTuning]);
 
   const handleSetFreq = useCallback((freq: string) => {
+    cancelKnobTuning();
     skipPollsCount.current = 1;
     setStatus(prev => ({ ...prev, frequency: freq }));
     if (statusRef.current.vfo === "VFOA") setVfoA(freq);
     else setVfoB(freq);
     socket?.emit("set-frequency", freq);
-  }, [socket, setVfoA, setVfoB]);
+  }, [socket, setVfoA, setVfoB, cancelKnobTuning]);
+
+  // Tuning knob: the displayed frequency follows every step immediately, while the radio is fed
+  // the latest value at a paced rate (KnobFrequencySender) so the link can't fall behind.
+  useEffect(() => {
+    if (!socket) return;
+    const sender = new KnobFrequencySender({
+      send: (freqHz, done) => {
+        socket.timeout(KNOB_ACK_TIMEOUT_MS).emit(
+          "set-frequency",
+          freqHz.toString(),
+          (err: Error | null, res?: { ok: boolean; frequency?: string | null }) => {
+            const confirmed = !err && res?.ok && res.frequency ? parseInt(res.frequency) : NaN;
+            done(isNaN(confirmed) ? null : confirmed);
+          },
+        );
+      },
+      onSettled: (confirmedHz) => {
+        setKnobPending(false);
+        // The radio may have rounded the frequency (e.g. to its own tuning resolution).
+        if (confirmedHz === null) return;
+        const freq = confirmedHz.toString();
+        setStatus(prev => ({ ...prev, frequency: freq }));
+        if (statusRef.current.vfo === "VFOA") setVfoA(freq);
+        else if (statusRef.current.vfo === "VFOB") setVfoB(freq);
+      },
+    });
+    knobSenderRef.current = sender;
+    return () => {
+      sender.cancel();
+      if (knobSenderRef.current === sender) knobSenderRef.current = null;
+      setKnobPending(false);
+    };
+  }, [socket]);
+
+  const handleKnobTune = useCallback((steps: number) => {
+    const sender = knobSenderRef.current;
+    const vfo = statusRef.current.vfo;
+    if (!sender || steps === 0 || !connectedStateRef.current) return;
+    if (vfo !== "VFOA" && vfo !== "VFOB") return;
+    const base = sender.target ?? parseInt(vfo === "VFOA" ? vfoARef.current : vfoBRef.current);
+    if (isNaN(base)) return;
+    const stepHz = Math.round(vfoStepRef.current * 1000000);
+    const next = base + steps * stepHz;
+    if (next <= 0) return;
+    const freq = next.toString();
+    setStatus(prev => ({ ...prev, frequency: freq }));
+    if (vfo === "VFOA") setVfoA(freq);
+    else setVfoB(freq);
+    setKnobPending(true);
+    sender.push(next);
+  }, [setVfoA, setVfoB]);
 
   const adjustVfoFrequency = useCallback((targetVfo: 'A' | 'B', direction: 1 | -1) => {
     if (!connectedStateRef.current) return;
@@ -517,6 +585,10 @@ export function useRigControl({
         skipPollsCount.current--;
         return;
       }
+      // While the knob is ahead of the radio, polls and readbacks carry stale intermediate
+      // frequencies; keep showing the knob's target until it settles.
+      const knobTarget = knobSenderRef.current?.target;
+      if (knobTarget != null) newStatus = { ...newStatus, frequency: knobTarget.toString() };
       newStatus.swr = Math.max(1, newStatus.swr ?? 1);
       newStatus.smeter = Math.max(-54, Math.min(60, newStatus.smeter ?? -54));
       setStatus(prev => {
@@ -658,6 +730,8 @@ export function useRigControl({
     handleConnect,
     handleSetFreq,
     adjustVfoFrequency,
+    handleKnobTune,
+    knobPending,
     handleSetMode,
     handleSetBw,
     handleSetPTT,

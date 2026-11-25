@@ -173,6 +173,69 @@ export function sendToRig(ctx: ServerContext, cmd: string, useExtended = false, 
   });
 }
 
+// Runs `apply` for at most one value at a time. Values requested while one is running collapse
+// into a single pending value (the newest wins), and every caller whose value was collapsed
+// resolves with the result of the run that replaced it. `hasNewer` lets `apply` skip follow-up
+// work (e.g. a readback) that a pending newer value would immediately make stale.
+export function createLatestWins<T>(
+  apply: (value: string, hasNewer: () => boolean) => Promise<T>,
+): (value: string) => Promise<T> {
+  type Waiter = { resolve: (result: T) => void; reject: (err: unknown) => void };
+  let pending: { value: string; waiters: Waiter[] } | null = null;
+  let running = false;
+
+  const run = async () => {
+    running = true;
+    while (pending) {
+      const { value, waiters } = pending;
+      pending = null;
+      try {
+        const result = await apply(value, () => pending !== null);
+        waiters.forEach(w => w.resolve(result));
+      } catch (err) {
+        waiters.forEach(w => w.reject(err));
+      }
+    }
+    running = false;
+  };
+
+  return (value) => new Promise<T>((resolve, reject) => {
+    if (pending) {
+      pending.value = value;
+      pending.waiters.push({ resolve, reject });
+    } else {
+      pending = { value, waiters: [{ resolve, reject }] };
+    }
+    if (!running) void run();
+  });
+}
+
+// Priority commands are unshift()ed onto the queue, so a backlog of set-frequency requests (a
+// spinning tuning knob, rapid step-button clicks, several clients at once) would execute
+// newest-first and leave the radio on the *oldest* frequency. Coalescing keeps at most one F
+// command in flight per rig connection and always lands on the newest requested frequency.
+// Resolves with the read-back frequency, or null when a newer request made the readback moot.
+const frequencySetters = new WeakMap<ServerContext, (freq: string) => Promise<string | null>>();
+
+export function setRigFrequency(ctx: ServerContext, freq: string): Promise<string | null> {
+  let setter = frequencySetters.get(ctx);
+  if (!setter) {
+    setter = createLatestWins(async (value, hasNewer) => {
+      const t0 = Date.now();
+      await sendToRig(ctx, `F ${value}`, true, true);
+      vlogWsjtx(`[wsjtx:freq] F ${value} accepted by rigctld (${Date.now() - t0}ms)`);
+      if (hasNewer()) return null;
+      const confirmedFreq = await sendToRig(ctx, "f", true, true);
+      vlogWsjtx(`[wsjtx:freq] readback: ${confirmedFreq} (${Date.now() - t0}ms total)`);
+      ctx.lastStatus = { ...ctx.lastStatus, frequency: confirmedFreq };
+      ctx.io.emit("rig-status", ctx.lastStatus);
+      return confirmedFreq;
+    });
+    frequencySetters.set(ctx, setter);
+  }
+  return setter(freq);
+}
+
 async function probeDumpCaps(ctx: ServerContext): Promise<string> {
   // dump_caps needs the full raw multi-KB response (not a single parsed value), so it bypasses
   // ctx.rigCommandQueue/executeRigCommand and attaches its own "data" listener directly. But it
@@ -1205,19 +1268,20 @@ export function registerRigCommHandlers(socket: Socket, ctx: ServerContext): voi
     }
   });
 
-  socket.on("set-frequency", async (freq) => {
+  // The optional ack lets a caller that streams frequencies (the VFO tuning knob) wait for the
+  // radio before sending the next one. `frequency` is the read-back value, or null when a newer
+  // request superseded the readback.
+  socket.on("set-frequency", async (freq, ack?: (res: { ok: boolean; frequency?: string | null }) => void) => {
     const t0 = Date.now();
     vlogWsjtx(`[wsjtx:freq] set-frequency received: ${freq}`);
+    const reply = typeof ack === "function" ? ack : undefined;
     try {
-      await sendToRig(ctx, `F ${freq}`, true, true);
-      vlogWsjtx(`[wsjtx:freq] F ${freq} accepted by rigctld (${Date.now() - t0}ms)`);
-      const confirmedFreq = await sendToRig(ctx, "f", true, true);
-      vlogWsjtx(`[wsjtx:freq] readback: ${confirmedFreq} (${Date.now() - t0}ms total)`);
-      ctx.lastStatus = { ...ctx.lastStatus, frequency: confirmedFreq };
-      ctx.io.emit("rig-status", ctx.lastStatus);
+      const confirmedFreq = await setRigFrequency(ctx, String(freq));
+      reply?.({ ok: true, frequency: confirmedFreq });
     } catch (err) {
       vlogWsjtx(`[wsjtx:freq] FAILED: ${err} (${Date.now() - t0}ms)`);
       socket.emit("rig-error", "Failed to set frequency");
+      reply?.({ ok: false });
     }
   });
 

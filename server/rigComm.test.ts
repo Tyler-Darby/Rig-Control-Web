@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { formatExtendedCommand, normalizeVfoName, parseDumpCapsIntoContext, parseExtendedResponse, resetRigState } from './rigComm.ts';
+import { createLatestWins, formatExtendedCommand, normalizeVfoName, parseDumpCapsIntoContext, parseExtendedResponse, resetRigState } from './rigComm.ts';
 import { createInitialContext } from './context.ts';
 
 describe('normalizeVfoName', () => {
@@ -194,5 +194,71 @@ describe('resetRigState', () => {
       powerState: 'unknown',
       powerPending: false,
     });
+  });
+});
+
+describe('createLatestWins', () => {
+  function deferred<T>() {
+    let resolve!: (v: T) => void;
+    let reject!: (e: unknown) => void;
+    const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+    return { promise, resolve, reject };
+  }
+
+  it('applies a lone value immediately and resolves with its result', async () => {
+    const run = createLatestWins(async (v) => `done:${v}`);
+    await expect(run('14074000')).resolves.toBe('done:14074000');
+  });
+
+  it('collapses values requested mid-run so only the newest is applied next, in order', async () => {
+    const applied: string[] = [];
+    const gates: ReturnType<typeof deferred<void>>[] = [];
+    const run = createLatestWins(async (v) => {
+      applied.push(v);
+      const gate = deferred<void>();
+      gates.push(gate);
+      await gate.promise;
+      return v;
+    });
+
+    const first = run('1');
+    const second = run('2');
+    const third = run('3');
+    expect(applied).toEqual(['1']);
+
+    gates[0].resolve();
+    await expect(first).resolves.toBe('1');
+    await Promise.resolve();
+    expect(applied).toEqual(['1', '3']);
+
+    gates[1].resolve();
+    // '2' was superseded before it ran; its caller gets the result of the run that replaced it.
+    await expect(second).resolves.toBe('3');
+    await expect(third).resolves.toBe('3');
+    expect(applied).toEqual(['1', '3']);
+  });
+
+  it('reports hasNewer() while a newer value is waiting', async () => {
+    const seen: Array<[string, boolean]> = [];
+    const gate = deferred<void>();
+    const run = createLatestWins(async (v, hasNewer) => {
+      if (v === '1') await gate.promise;
+      seen.push([v, hasNewer()]);
+      return v;
+    });
+    const first = run('1');
+    const second = run('2');
+    gate.resolve();
+    await Promise.all([first, second]);
+    expect(seen).toEqual([['1', true], ['2', false]]);
+  });
+
+  it('rejects the callers of a failed run and keeps serving later values', async () => {
+    const run = createLatestWins(async (v) => {
+      if (v === 'bad') throw new Error('rig timeout');
+      return v;
+    });
+    await expect(run('bad')).rejects.toThrow('rig timeout');
+    await expect(run('good')).resolves.toBe('good');
   });
 });

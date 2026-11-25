@@ -98,6 +98,8 @@ export interface CompactLayoutProps {
   setInputVfoA: React.Dispatch<React.SetStateAction<string>>;
   setInputVfoB: React.Dispatch<React.SetStateAction<string>>;
   adjustVfoFrequency: (targetVfo: "A" | "B", direction: 1 | -1) => void;
+  handleKnobTune: (steps: number) => void;
+  knobPending: boolean;
   handleSetVFO: (vfo: string) => void;
   handleToggleSplit: () => void;
   handleSetFreq: (freq: string) => void;
@@ -307,6 +309,8 @@ function CompactLayout({
   setInputVfoA,
   setInputVfoB,
   adjustVfoFrequency,
+  handleKnobTune,
+  knobPending,
   handleSetVFO,
   handleToggleSplit,
   handleSetFreq,
@@ -542,7 +546,7 @@ function CompactLayout({
             </PanelChrome>
           );
         }
-        return <VfoPanel variant="compact" {...vfoProps} />;
+        return <VfoPanel variant="compact" {...vfoProps} handleKnobTune={handleKnobTune} knobPending={knobPending} />;
       }
 
       case 'smeter':

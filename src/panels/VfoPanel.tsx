@@ -4,6 +4,7 @@ import { cn, formatStep } from "../utils";
 import { VFO_STEPS } from "../constants";
 import type { RigStatus } from "../types";
 import ModeBwPanel from "./ModeBwPanel";
+import TuningKnob from "../components/TuningKnob";
 
 export interface VfoPanelProps {
   variant: "compact" | "phone";
@@ -27,6 +28,10 @@ export interface VfoPanelProps {
   handleSetBw?: (bw: number) => void;
   bandwidth?: number | string;
   bwDisabled?: boolean;
+  /** Tuning knob (compact/full-width variant only); called with a signed step count. */
+  handleKnobTune?: (steps: number) => void;
+  /** The displayed frequency came from the knob and the radio hasn't confirmed it yet. */
+  knobPending?: boolean;
 }
 
 export interface VfoCollapsedHeaderProps {
@@ -238,11 +243,12 @@ interface VfoFrequencyInputProps {
   setInputVfoA: React.Dispatch<React.SetStateAction<string>>;
   setInputVfoB: React.Dispatch<React.SetStateAction<string>>;
   handleSetFreq: (freq: string) => void;
+  pending?: boolean;
 }
 
 function VfoFrequencyInput({
   size, status, connected, vfoKnown, vfoIsA, vfoStep,
-  inputVfoA, inputVfoB, setInputVfoA, setInputVfoB, handleSetFreq,
+  inputVfoA, inputVfoB, setInputVfoA, setInputVfoB, handleSetFreq, pending = false,
 }: VfoFrequencyInputProps) {
   const isCompact = size === "compact";
   const colorClass = cn(
@@ -270,8 +276,10 @@ function VfoFrequencyInput({
         "w-full bg-ink/5 font-bold tracking-tighter font-mono text-center focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none transition-all cursor-text border",
         isCompact ? "text-4xl rounded-lg py-1 px-2" : "text-3xl rounded-xl py-1.5 px-3",
         !connected && "opacity-50 cursor-not-allowed",
+        connected && pending && "opacity-50",
         colorClass
       )}
+      data-pending={pending || undefined}
       {...(isCompact ? { title: "Click to edit frequency" } : {})}
     />
   );
@@ -344,6 +352,8 @@ export default function VfoPanel({
   handleSetBw,
   bandwidth,
   bwDisabled = false,
+  handleKnobTune,
+  knobPending = false,
 }: VfoPanelProps) {
   const vfoIsA = status.vfo === "VFOA";
   const vfoIsB = status.vfo === "VFOB";
@@ -353,56 +363,73 @@ export default function VfoPanel({
   if (variant === "compact") {
     return (
       <div className={cn(
-        "bg-panel p-3 rounded-xl border shadow-lg space-y-2",
+        "bg-panel p-3 rounded-xl border shadow-lg flex gap-3",
         !vfoKnown ? "border-line" : vfoIsA ? "border-emerald-500/30" : "border-blue-500/30"
       )}>
-        <div className="grid grid-cols-3 items-center">
-          <VfoButtonGroup
+        <div className="flex-1 min-w-0 space-y-2">
+          <div className="grid grid-cols-3 items-center">
+            <VfoButtonGroup
+              size="compact"
+              status={status}
+              connected={connected}
+              vfoSupported={vfoSupported}
+              handleSetVFO={handleSetVFO}
+              handleToggleSplit={handleToggleSplit}
+            />
+            <VfoFreqStepButtons
+              size="compact"
+              vfoIsA={vfoIsA}
+              vfoStep={vfoStep}
+              connected={connected}
+              adjustVfoFrequency={adjustVfoFrequency}
+            />
+            {localMode !== undefined && handleSetMode && handleSetBw && (
+              <div className="flex items-center justify-end gap-2">
+                <ModeBwPanel
+                  variant="compact"
+                  connected={connected}
+                  localMode={localMode}
+                  availableModes={availableModes ?? []}
+                  handleSetMode={handleSetMode}
+                  bandwidth={bandwidth ?? "2400"}
+                  handleSetBw={handleSetBw}
+                  bwDisabled={bwDisabled}
+                />
+              </div>
+            )}
+          </div>
+
+          <VfoFrequencyInput
             size="compact"
             status={status}
             connected={connected}
-            vfoSupported={vfoSupported}
-            handleSetVFO={handleSetVFO}
-            handleToggleSplit={handleToggleSplit}
-          />
-          <VfoFreqStepButtons
-            size="compact"
+            vfoKnown={vfoKnown}
             vfoIsA={vfoIsA}
             vfoStep={vfoStep}
-            connected={connected}
-            adjustVfoFrequency={adjustVfoFrequency}
+            inputVfoA={inputVfoA}
+            inputVfoB={inputVfoB}
+            setInputVfoA={setInputVfoA}
+            setInputVfoB={setInputVfoB}
+            handleSetFreq={handleSetFreq}
+            pending={knobPending}
           />
-          {localMode !== undefined && handleSetMode && handleSetBw && (
-            <div className="flex items-center justify-end gap-2">
-              <ModeBwPanel
-                variant="compact"
-                connected={connected}
-                localMode={localMode}
-                availableModes={availableModes ?? []}
-                handleSetMode={handleSetMode}
-                bandwidth={bandwidth ?? "2400"}
-                handleSetBw={handleSetBw}
-                bwDisabled={bwDisabled}
-              />
-            </div>
-          )}
+
+          <VfoStepSelector size="compact" vfoStep={vfoStep} setVfoStep={setVfoStep} connected={connected} />
         </div>
 
-        <VfoFrequencyInput
-          size="compact"
-          status={status}
-          connected={connected}
-          vfoKnown={vfoKnown}
-          vfoIsA={vfoIsA}
-          vfoStep={vfoStep}
-          inputVfoA={inputVfoA}
-          inputVfoB={inputVfoB}
-          setInputVfoA={setInputVfoA}
-          setInputVfoB={setInputVfoB}
-          handleSetFreq={handleSetFreq}
-        />
-
-        <VfoStepSelector size="compact" vfoStep={vfoStep} setVfoStep={setVfoStep} connected={connected} />
+        {handleKnobTune && (
+          <TuningKnob
+            onTune={handleKnobTune}
+            disabled={!connected || !vfoKnown}
+            stepLabel={stepLabel(vfoStep)}
+            accentClass={
+              status.isSplit ? "text-amber-500"
+              : !vfoKnown ? "text-muted"
+              : vfoIsA ? "text-emerald-500" : "text-blue-500"
+            }
+            valueText={vfoKnown ? `${vfoIsA ? inputVfoA : inputVfoB} MHz` : "unknown"}
+          />
+        )}
       </div>
     );
   }

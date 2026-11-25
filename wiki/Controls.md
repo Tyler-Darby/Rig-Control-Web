@@ -37,6 +37,16 @@ The large number in the center of the VFO section shows your current frequency i
 
 Below the frequency display are step buttons: **10Hz**, **100Hz**, **1k**, **3k**, **10k**, **100k**. The highlighted button is the active step size. Use the **< 1k** and **1k >** arrow buttons on either side of the display to step the frequency down or up by the selected amount.
 
+### Tuning Knob
+
+When the VFO section is a **full-width** panel (the default compact layout), a tuning knob sits on its right side. It isn't shown when the VFO panel is placed in a column, or in the phone layout. Each knob movement changes the frequency by the selected tuning step, with no speed-based acceleration. Pick a bigger step for coarse tuning and a smaller one for fine tuning. The knob's center shows the current step.
+
+- **Mouse wheel or trackpad:** scroll over the knob. Scrolling up tunes up. Each mouse-wheel click moves one step. Trackpad scrolling moves one step for every short stretch of finger travel, and is rate-limited so a fast flick or momentum scrolling (common on Apple trackpads) can't run away. The page doesn't scroll while the pointer is over the knob.
+- **Touch or click:** press and hold the knob, then drag up to tune up or down to tune down. The drag keeps working if your finger or pointer leaves the knob.
+- **Keyboard:** click or Tab to the knob, then use the arrow keys (one step) or Page Up / Page Down (ten steps).
+
+The frequency display follows the knob instantly. The radio is sent the newest frequency at a slower, steady pace so the CAT link never falls behind, so the spectrum scope may shift in small jumps while you turn. While the radio hasn't caught up to the displayed number (and for about half a second after it does), the frequency is shown **dimmed**.
+
 ### Mode and Bandwidth
 
 To the right of the frequency display are two dropdowns:

@@ -1,6 +1,6 @@
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { test, expect } from '../fixtures/test.ts';
+import { test, expect, type Page } from '../fixtures/test.ts';
 import { startDummyRigctld, type DummyRigctld } from '../fixtures/rigctld-dummy.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -21,7 +21,7 @@ test.describe('VfoPanel against a real rigctld Dummy backend', () => {
     await dummy.stop();
   });
 
-  test('connects, displays live frequency, and round-trips a frequency change', async ({ page }) => {
+  async function connectToDummy(page: Page) {
     await page.goto('/');
 
     // Point the client at the Dummy rigctld instance via the real Settings UI.
@@ -40,6 +40,22 @@ test.describe('VfoPanel against a real rigctld Dummy backend', () => {
     await expect(page.getByRole('button', { name: 'Disconnect', exact: true })).toBeVisible({
       timeout: 10_000,
     });
+  }
+
+  // Disconnect cleanly before the Dummy rigctld process is stopped in
+  // afterAll — all e2e specs share one server process for the run, and an
+  // abrupt process kill while still "connected" reads as an unexpected
+  // drop, triggering the server's 5s auto-reconnect loop against a port
+  // that no longer exists and interfering with whichever spec runs next.
+  async function disconnect(page: Page) {
+    await page.getByRole('button', { name: 'Disconnect', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Connect', exact: true })).toBeVisible({
+      timeout: 5_000,
+    });
+  }
+
+  test('connects, displays live frequency, and round-trips a frequency change', async ({ page }) => {
+    await connectToDummy(page);
 
     // Dummy's default simulated frequency is 145 MHz.
     const freqInput = page.getByTitle('Click to edit frequency');
@@ -52,14 +68,49 @@ test.describe('VfoPanel against a real rigctld Dummy backend', () => {
     await freqInput.press('Enter');
     await expect(freqInput).toHaveValue('146.520000', { timeout: 10_000 });
 
-    // Disconnect cleanly before the Dummy rigctld process is stopped in
-    // afterAll — all e2e specs share one server process for the run, and an
-    // abrupt process kill while still "connected" reads as an unexpected
-    // drop, triggering the server's 5s auto-reconnect loop against a port
-    // that no longer exists and interfering with whichever spec runs next.
-    await page.getByRole('button', { name: 'Disconnect', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Connect', exact: true })).toBeVisible({
-      timeout: 5_000,
-    });
+    await disconnect(page);
+  });
+
+  test('tuning knob tunes by wheel and by press-and-drag at the selected step', async ({ page }) => {
+    await connectToDummy(page);
+
+    const freqInput = page.getByTitle('Click to edit frequency');
+    await expect(freqInput).not.toHaveValue('', { timeout: 10_000 });
+    // Start from a known frequency (the previous test leaves the shared Dummy elsewhere).
+    await freqInput.fill('14.074000');
+    await freqInput.press('Enter');
+    await expect(freqInput).toHaveValue('14.074000', { timeout: 10_000 });
+
+    // The step row's buttons are the only untitled ones labelled "1k" (the ◀/▶ step-tune
+    // buttons also show the current step but carry a title).
+    await page.locator('button:not([title])', { hasText: /^1k$/ }).click();
+    const knob = page.getByTestId('tuning-knob');
+    await expect(knob).toBeVisible();
+    const box = (await knob.boundingBox())!;
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+
+    // Scroll up one notch: the display moves immediately and is marked unconfirmed...
+    await page.mouse.move(cx, cy);
+    await page.mouse.wheel(0, -100);
+    await expect(freqInput).toHaveValue('14.075000');
+    await expect(freqInput).toHaveAttribute('data-pending', 'true');
+    // ...then the radio confirms it and the pending state clears, with the value intact.
+    await expect(freqInput).not.toHaveAttribute('data-pending', { timeout: 10_000 });
+    await expect(freqInput).toHaveValue('14.075000');
+
+    // Press and drag up 5 steps (6 px per step), then down 2.
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    for (let i = 1; i <= 5; i++) await page.mouse.move(cx, cy - i * 6);
+    for (let i = 1; i <= 2; i++) await page.mouse.move(cx, cy - 30 + i * 6);
+    await page.mouse.up();
+    await expect(freqInput).toHaveValue('14.078000');
+    await expect(freqInput).not.toHaveAttribute('data-pending', { timeout: 10_000 });
+    // Survives the next real poll from the Dummy backend, i.e. the radio really tuned there.
+    await page.waitForTimeout(2_500);
+    await expect(freqInput).toHaveValue('14.078000');
+
+    await disconnect(page);
   });
 });
